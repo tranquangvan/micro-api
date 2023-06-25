@@ -1,0 +1,41 @@
+version: "3.7"
+services:
+  mysql:
+    image: mysql:latest
+    restart: always
+    environment:
+      - MYSQL_USER=mysql
+      - MYSQL_ROOT_PASSWORD=mysqlpassword
+      - MYSQL_PASSWORD=mysqlpassword
+      - MYSQL_DATABASE=micro-api
+    ports:
+      - "3305:3306"
+    networks:
+        micro_api:
+          ipv4_address: 182.20.0.3
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: dev.env
+    depends_on:
+      - mysql
+    volumes:
+      - ./:/app/
+    networks:
+        micro_api:
+          ipv4_address: 182.20.0.2
+    ports:
+    - "8085:8000"
+volumes:
+  dbdata:
+networks:
+  micro_api:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 182.20.0.0/24
+          gateway: 182.20.0.1

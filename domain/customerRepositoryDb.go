@@ -1,61 +1,52 @@
 package domain
 
 import (
-	"database/sql"
-	"log"
 	"micro-api/errs"
-	"time"
+	"micro-api/logger"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
 )
 
-func NewCustomerRepositoryDb() CustomerRepositoryDb {
-	client, err := sql.Open("mysql", "user:password@/dbname")
-	if err != nil {
-		panic(err)
+type CustomerRepository interface {
+	FindAll(status string) ([]Customer, *errs.AppError)
+	FindById(string) (*Customer, *errs.AppError)
+}
+
+func NewCustomerRepositoryDb(dbClient *sqlx.DB) CustomerRepositoryDb {
+	return CustomerRepositoryDb{
+		client: dbClient,
 	}
-	// See "Important settings" section.
-	client.SetConnMaxLifetime(time.Minute * 3)
-	client.SetMaxOpenConns(10)
-	client.SetMaxIdleConns(10)
-	return CustomerRepositoryDb{client}
 }
 
 type CustomerRepositoryDb struct {
-	client *sql.DB
+	client *sqlx.DB
 }
 
-func (d *CustomerRepositoryDb) FindAll() ([]Customer, error) {
-	findAllSql := "select customer_id, name, city, zipcode, date_of_birth, status from customers"
-
-	rows, err := d.client.Query(findAllSql)
-	if err != nil {
-		log.Println("Error while querying customer table " + err.Error())
-		return nil, err
-	}
+func (d *CustomerRepositoryDb) FindAll(status string) ([]Customer, *errs.AppError) {
 	customers := make([]Customer, 0)
-
-	for rows.Next() {
-		var customerRow Customer
-		err := rows.Scan(&customerRow)
-		if err != nil {
-			log.Println("Error while scanning customer table " + err.Error())
-			return nil, err
-		}
-		customers = append(customers, customerRow)
+	var err error
+	findAllSql := "select customer_id, name, city, zipcode, date_of_birth, status from customers"
+	if status == "" {
+		err = d.client.Select(&customers, findAllSql)
+	} else {
+		findAllSql += " where status = ? "
+		err = d.client.Select(&customers, findAllSql, status)
 	}
-	return customers, err
+
+	if err != nil {
+		logger.Error("Error while scanning customer " + err.Error())
+		return nil, errs.NewUnexprectedError("Unexpected database error")
+	}
+	return customers, nil
 }
 func (d *CustomerRepositoryDb) FindById(id string) (*Customer, *errs.AppError) {
 	findCustomerSql := "select customer_id, name, city, zipcode, date_of_birth, status from customers where customer_id = ?"
-	row := d.client.QueryRow(findCustomerSql)
 	var customer Customer
-	err := row.Scan(&customer)
+	err := d.client.Get(&customer, findCustomerSql, id)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, errs.NewNotFoundError("Customer not found")
-		} else {
-			log.Println("Error while scanning customer " + err.Error())
-			return nil, errs.NewUnexprectedError("Unexpected database error")
-		}
+		logger.Error("Error while scanning customer " + err.Error())
+		return nil, errs.NewUnexprectedError("Unexpected database error")
 	}
 	return &customer, nil
 }
